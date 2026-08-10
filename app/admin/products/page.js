@@ -15,7 +15,7 @@ const EMPTY_FORM = {
   category: "",
   price: "",
   compareAtPrice: "",
-  unit: "piece",
+  unit: "gram",
   stock: 0,
   lowStockThreshold: 5,
   description: "",
@@ -68,9 +68,28 @@ export default function AdminProductsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, search]);
 
+  // Builds an SKU like AF-OIL-48213 from the category name + a short unique suffix.
+  // Client-side generation is good enough for a low-volume admin panel, but if two
+  // admins could add products for the same category at the exact same millisecond,
+  // move this logic server-side (in the POST /api/products route) for guaranteed
+  // uniqueness against the database.
+  function generateSKU(categoryId) {
+    const cat = categories.find((c) => c._id === categoryId);
+    const catCode = cat
+      ? cat.name.replace(/[^a-zA-Z]/g, "").slice(0, 3).toUpperCase().padEnd(3, "X")
+      : "GEN";
+    const suffix = `${Date.now()}`.slice(-5) + Math.floor(Math.random() * 10);
+    return `AF-${catCode}-${suffix}`;
+  }
+
   function openAdd() {
     setEditingId(null);
-    setForm({ ...EMPTY_FORM, category: categories[0]?._id || "" });
+    const defaultCategory = categories[0]?._id || "";
+    setForm({
+      ...EMPTY_FORM,
+      category: defaultCategory,
+      sku: generateSKU(defaultCategory),
+    });
     setError("");
     setModalOpen(true);
   }
@@ -516,13 +535,28 @@ export default function AdminProductsPage() {
         <form onSubmit={handleSave} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <FormField label="Product Name" required value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
-            <FormField
-              label="SKU"
-              required
-              value={form.sku}
-              onChange={(v) => setForm({ ...form, sku: v.toUpperCase() })}
-              placeholder="e.g. AF-OIL-001"
-            />
+
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold text-ink/70">SKU (auto-generated)</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={form.sku}
+                  className="w-full cursor-not-allowed rounded-xl border border-gold/30 bg-champagne/40 px-4 py-2.5 text-sm text-ink/70 outline-none"
+                />
+                {!editingId && (
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, sku: generateSKU(f.category) }))}
+                    className="shrink-0 rounded-xl border border-gold/30 px-3 py-2.5 text-xs font-semibold text-forest hover:bg-champagne"
+                    title="Generate a new SKU"
+                  >
+                    ↻
+                  </button>
+                )}
+              </div>
+            </label>
           </div>
 
           <label className="block">
@@ -530,7 +564,17 @@ export default function AdminProductsPage() {
             <select
               required
               value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
+              onChange={(e) => {
+                const categoryId = e.target.value;
+                setForm((f) => ({
+                  ...f,
+                  category: categoryId,
+                  // Re-generate the SKU whenever the category changes on a new
+                  // product, so the SKU's category code always matches. Leave
+                  // an existing product's SKU untouched while editing.
+                  sku: editingId ? f.sku : generateSKU(categoryId),
+                }));
+              }}
               className="w-full rounded-xl border border-gold/30 px-4 py-2.5 text-sm outline-none focus:border-forest"
             >
               <option value="">Select category</option>
@@ -543,7 +587,20 @@ export default function AdminProductsPage() {
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <FormField label="Price (₹)" required type="number" value={form.price} onChange={(v) => setForm({ ...form, price: v })} />
             <FormField label="Compare Price" type="number" value={form.compareAtPrice} onChange={(v) => setForm({ ...form, compareAtPrice: v })} />
-            <FormField label="Unit" value={form.unit} onChange={(v) => setForm({ ...form, unit: v })} placeholder="e.g. 1 L / 500 g" />
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold text-ink/70">Unit</span>
+              <select
+                value={form.unit}
+                onChange={(e) => setForm({ ...form, unit: e.target.value })}
+                className="w-full rounded-xl border border-gold/30 px-4 py-2.5 text-sm outline-none focus:border-forest"
+              >
+                <option value="gram">gram</option>
+                <option value="kg">kg</option>
+                <option value="piece">piece</option>
+                <option value="ml">ml</option>
+                <option value="litre">litre</option>
+              </select>
+            </label>
             <FormField label="Stock" required type="number" value={form.stock} onChange={(v) => setForm({ ...form, stock: v })} />
           </div>
 
