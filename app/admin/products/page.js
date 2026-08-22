@@ -22,9 +22,13 @@ const EMPTY_FORM = {
   isFeatured: false,
   isActive: true,
   media: [],
+  hasVariants: false,
+  variants: [],
 };
 
 const PAGE_SIZE = 20;
+
+const VARIANT_UNITS = ["gram", "kg", "ml", "litre", "piece"];
 
 export default function AdminProductsPage() {
   const [products, setProducts] = useState([]);
@@ -109,9 +113,57 @@ export default function AdminProductsPage() {
       isFeatured: p.isFeatured,
       isActive: p.isActive,
       media: p.media || [],
+      hasVariants: !!p.hasVariants,
+      variants: p.variants || [],
     });
     setError("");
     setModalOpen(true);
+  }
+
+  // --- Variant helpers ---
+
+  function addVariant() {
+    setForm((f) => ({
+      ...f,
+      variants: [
+        ...f.variants,
+        {
+          label: "",
+          value: "",
+          unit: f.unit || "gram",
+          sku: "",
+          price: "",
+          compareAtPrice: "",
+          stock: 0,
+          isDefault: f.variants.length === 0, // first one added becomes default
+        },
+      ],
+    }));
+  }
+
+  function updateVariant(index, patch) {
+    setForm((f) => ({
+      ...f,
+      variants: f.variants.map((v, i) => (i === index ? { ...v, ...patch } : v)),
+    }));
+  }
+
+  function removeVariant(index) {
+    setForm((f) => {
+      const variants = f.variants.filter((_, i) => i !== index);
+      // if we removed the default, make the first remaining one the default
+      if (variants.length && !variants.some((v) => v.isDefault)) {
+        variants[0] = { ...variants[0], isDefault: true };
+      }
+      return { ...f, variants };
+    });
+  }
+
+  function setDefaultVariant(index) {
+    setForm((f) => ({
+      ...f,
+      variants: f.variants.map((v, i) => ({ ...v, isDefault: i === index })),
+    }));
   }
 
   async function handleSave(e) {
@@ -119,6 +171,16 @@ export default function AdminProductsPage() {
     setSaving(true);
     setError("");
     try {
+      if (form.hasVariants) {
+        const missingLabel = form.variants.some((v) => !String(v.label || "").trim());
+        if (missingLabel) {
+          throw new Error("Every variant needs a label (e.g. 100g, 500g).");
+        }
+        if (form.variants.length === 0) {
+          throw new Error("Add at least one variant, or turn off variants for this product.");
+        }
+      }
+
       const payload = {
         ...form,
         sku: form.sku.trim().toUpperCase(),
@@ -126,6 +188,16 @@ export default function AdminProductsPage() {
         compareAtPrice: Number(form.compareAtPrice) || 0,
         stock: Number(form.stock),
         lowStockThreshold: Number(form.lowStockThreshold),
+        hasVariants: form.hasVariants && form.variants.length > 0,
+        variants: form.hasVariants
+          ? form.variants.map((v) => ({
+              ...v,
+              value: Number(v.value) || 0,
+              price: Number(v.price) || 0,
+              compareAtPrice: Number(v.compareAtPrice) || 0,
+              stock: Number(v.stock) || 0,
+            }))
+          : [],
       };
       const res = await fetch(editingId ? `/api/products/${editingId}` : "/api/products", {
         method: editingId ? "PUT" : "POST",
@@ -173,6 +245,32 @@ export default function AdminProductsPage() {
     return pages;
   }
 
+  // --- Display helpers ---
+
+  // Returns a compact price string for the table/cards: a single price for
+  // simple products, or a "from X" range for variant products.
+  function displayPrice(p) {
+    if (p.hasVariants && p.variants?.length) {
+      const prices = p.variants.map((v) => v.price);
+      const min = Math.min(...prices);
+      const max = Math.max(...prices);
+      return min === max ? `₹${min}` : `From ₹${min}`;
+    }
+    return `₹${p.price}`;
+  }
+
+  // Returns total stock across variants (or the base stock for simple products).
+  function displayStock(p) {
+    if (p.hasVariants && p.variants?.length) {
+      return p.variants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
+    }
+    return p.stock;
+  }
+
+  function isLowStock(p) {
+    return displayStock(p) <= p.lowStockThreshold;
+  }
+
   // --- Export helpers ---
 
   // Fetches every product matching the current search (no pagination limit)
@@ -186,19 +284,43 @@ export default function AdminProductsPage() {
   }
 
   function buildExportRows(list) {
-    return list.map((p) => ({
-      SKU: p.sku,
-      Name: p.name,
-      Category: p.category?.name || "",
-      Price: p.price,
-      "Compare Price": p.compareAtPrice || 0,
-      Unit: p.unit,
-      Stock: p.stock,
-      "Low Stock Threshold": p.lowStockThreshold,
-      Status: p.isActive ? "Active" : "Hidden",
-      Featured: p.isFeatured ? "Yes" : "No",
-      Description: p.description || "",
-    }));
+    const rows = [];
+    list.forEach((p) => {
+      if (p.hasVariants && p.variants?.length) {
+        p.variants.forEach((v) => {
+          rows.push({
+            SKU: v.sku || p.sku,
+            Name: p.name,
+            Variant: v.label,
+            Category: p.category?.name || "",
+            Price: v.price,
+            "Compare Price": v.compareAtPrice || 0,
+            Unit: v.unit,
+            Stock: v.stock,
+            "Low Stock Threshold": p.lowStockThreshold,
+            Status: p.isActive ? "Active" : "Hidden",
+            Featured: p.isFeatured ? "Yes" : "No",
+            Description: p.description || "",
+          });
+        });
+      } else {
+        rows.push({
+          SKU: p.sku,
+          Name: p.name,
+          Variant: "-",
+          Category: p.category?.name || "",
+          Price: p.price,
+          "Compare Price": p.compareAtPrice || 0,
+          Unit: p.unit,
+          Stock: p.stock,
+          "Low Stock Threshold": p.lowStockThreshold,
+          Status: p.isActive ? "Active" : "Hidden",
+          Featured: p.isFeatured ? "Yes" : "No",
+          Description: p.description || "",
+        });
+      }
+    });
+    return rows;
   }
 
   async function exportExcel() {
@@ -216,6 +338,7 @@ export default function AdminProductsPage() {
       worksheet["!cols"] = [
         { wch: 14 }, // SKU
         { wch: 28 }, // Name
+        { wch: 12 }, // Variant
         { wch: 16 }, // Category
         { wch: 10 }, // Price
         { wch: 14 }, // Compare Price
@@ -264,18 +387,37 @@ export default function AdminProductsPage() {
         align: "center",
       });
 
+      const body = [];
+      list.forEach((p) => {
+        if (p.hasVariants && p.variants?.length) {
+          p.variants.forEach((v) => {
+            body.push([
+              v.sku || p.sku,
+              `${p.name} (${v.label})`,
+              p.category?.name || "-",
+              v.price,
+              v.stock,
+              p.isActive ? "Active" : "Hidden",
+              p.isFeatured ? "Yes" : "No",
+            ]);
+          });
+        } else {
+          body.push([
+            p.sku,
+            p.name,
+            p.category?.name || "-",
+            p.price,
+            p.stock,
+            p.isActive ? "Active" : "Hidden",
+            p.isFeatured ? "Yes" : "No",
+          ]);
+        }
+      });
+
       autoTable(doc, {
         startY: 36,
         head: [["SKU", "Name", "Category", "Price (₹)", "Stock", "Status", "Featured"]],
-        body: list.map((p) => [
-          p.sku,
-          p.name,
-          p.category?.name || "-",
-          p.price,
-          p.stock,
-          p.isActive ? "Active" : "Hidden",
-          p.isFeatured ? "Yes" : "No",
-        ]),
+        body,
         theme: "grid",
         headStyles: { fillColor: [184, 146, 63] },
         styles: { fontSize: 8 },
@@ -391,13 +533,20 @@ export default function AdminProductsPage() {
                           />
                         ))}
                     </div>
-                    <span className="font-medium text-ink">{p.name}</span>
+                    <div>
+                      <span className="font-medium text-ink">{p.name}</span>
+                      {p.hasVariants && p.variants?.length > 0 && (
+                        <span className="ml-2 rounded-full bg-champagne px-2 py-0.5 text-[10px] font-semibold text-gold-dark">
+                          {p.variants.length} variant{p.variants.length > 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-ink/70">{p.category?.name}</td>
-                  <td className="px-4 py-3 text-ink/70">₹{p.price}</td>
+                  <td className="px-4 py-3 text-ink/70">{displayPrice(p)}</td>
                   <td className="px-4 py-3">
-                    <span className={p.stock <= p.lowStockThreshold ? "font-semibold text-terracotta" : "text-ink/70"}>
-                      {p.stock}
+                    <span className={isLowStock(p) ? "font-semibold text-terracotta" : "text-ink/70"}>
+                      {displayStock(p)}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -460,15 +609,22 @@ export default function AdminProductsPage() {
                     </span>
                   </div>
                   <p className="mt-0.5 font-mono text-[11px] text-ink/50">{p.sku}</p>
-                  <p className="mt-0.5 text-xs text-ink/70">{p.category?.name}</p>
+                  <p className="mt-0.5 text-xs text-ink/70">
+                    {p.category?.name}
+                    {p.hasVariants && p.variants?.length > 0 && (
+                      <span className="ml-2 rounded-full bg-champagne px-2 py-0.5 text-[10px] font-semibold text-gold-dark">
+                        {p.variants.length} variant{p.variants.length > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </p>
                 </div>
               </div>
 
               <div className="mt-3 flex items-center justify-between border-t border-gold/10 pt-3">
                 <div className="flex items-center gap-4 text-xs">
-                  <span className="font-semibold text-forest">₹{p.price}</span>
-                  <span className={p.stock <= p.lowStockThreshold ? "font-semibold text-terracotta" : "text-ink/70"}>
-                    Stock: {p.stock}
+                  <span className="font-semibold text-forest">{displayPrice(p)}</span>
+                  <span className={isLowStock(p) ? "font-semibold text-terracotta" : "text-ink/70"}>
+                    Stock: {displayStock(p)}
                   </span>
                 </div>
                 <div className="flex items-center gap-4">
@@ -585,7 +741,13 @@ export default function AdminProductsPage() {
           </label>
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <FormField label="Price (₹)" required type="number" value={form.price} onChange={(v) => setForm({ ...form, price: v })} />
+            <FormField
+              label={form.hasVariants ? "Base Price (₹)" : "Price (₹)"}
+              required
+              type="number"
+              value={form.price}
+              onChange={(v) => setForm({ ...form, price: v })}
+            />
             <FormField label="Compare Price" type="number" value={form.compareAtPrice} onChange={(v) => setForm({ ...form, compareAtPrice: v })} />
             <label className="block">
               <span className="mb-1 block text-xs font-semibold text-ink/70">Unit</span>
@@ -594,14 +756,145 @@ export default function AdminProductsPage() {
                 onChange={(e) => setForm({ ...form, unit: e.target.value })}
                 className="w-full rounded-xl border border-gold/30 px-4 py-2.5 text-sm outline-none focus:border-forest"
               >
-                <option value="gram">gram</option>
-                <option value="kg">kg</option>
-                <option value="piece">piece</option>
-                <option value="ml">ml</option>
-                <option value="litre">litre</option>
+                {VARIANT_UNITS.map((u) => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
               </select>
             </label>
-            <FormField label="Stock" required type="number" value={form.stock} onChange={(v) => setForm({ ...form, stock: v })} />
+            <FormField
+              label={form.hasVariants ? "Base Stock" : "Stock"}
+              required
+              type="number"
+              value={form.stock}
+              onChange={(v) => setForm({ ...form, stock: v })}
+            />
+          </div>
+          {form.hasVariants && (
+            <p className="-mt-2 text-[11px] text-muted">
+              Base price/stock above are shown only as a fallback. Customers will choose from the variants below.
+            </p>
+          )}
+
+          {/* Variants */}
+          <div className="rounded-xl2 border border-gold/20 p-4">
+            <label className="flex items-center gap-2 text-sm font-semibold text-ink">
+              <input
+                type="checkbox"
+                checked={form.hasVariants}
+                onChange={(e) => setForm({ ...form, hasVariants: e.target.checked })}
+              />
+              This product has size/weight/quantity variants (e.g. 100g, 500g, 1kg)
+            </label>
+
+            {form.hasVariants && (
+              <div className="mt-4 space-y-3">
+                {form.variants.length === 0 && (
+                  <p className="text-xs text-muted">No variants yet. Add at least one below.</p>
+                )}
+
+                {form.variants.map((v, i) => (
+                  <div key={i} className="grid grid-cols-2 gap-2 rounded-xl border border-gold/15 p-3 sm:grid-cols-6">
+                    <label className="block sm:col-span-2">
+                      <span className="mb-1 block text-[11px] font-semibold text-ink/60">Label</span>
+                      <input
+                        type="text"
+                        placeholder="e.g. 500g"
+                        value={v.label}
+                        onChange={(e) => updateVariant(i, { label: e.target.value })}
+                        className="w-full rounded-lg border border-gold/30 px-2 py-1.5 text-sm outline-none focus:border-forest"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-semibold text-ink/60">Value</span>
+                      <input
+                        type="number"
+                        placeholder="500"
+                        value={v.value}
+                        onChange={(e) => updateVariant(i, { value: e.target.value })}
+                        className="w-full rounded-lg border border-gold/30 px-2 py-1.5 text-sm outline-none focus:border-forest"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-semibold text-ink/60">Unit</span>
+                      <select
+                        value={v.unit}
+                        onChange={(e) => updateVariant(i, { unit: e.target.value })}
+                        className="w-full rounded-lg border border-gold/30 px-2 py-1.5 text-sm outline-none focus:border-forest"
+                      >
+                        {VARIANT_UNITS.map((u) => (
+                          <option key={u} value={u}>{u}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-semibold text-ink/60">Price (₹)</span>
+                      <input
+                        type="number"
+                        value={v.price}
+                        onChange={(e) => updateVariant(i, { price: e.target.value })}
+                        className="w-full rounded-lg border border-gold/30 px-2 py-1.5 text-sm outline-none focus:border-forest"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-semibold text-ink/60">Stock</span>
+                      <input
+                        type="number"
+                        value={v.stock}
+                        onChange={(e) => updateVariant(i, { stock: e.target.value })}
+                        className="w-full rounded-lg border border-gold/30 px-2 py-1.5 text-sm outline-none focus:border-forest"
+                      />
+                    </label>
+
+                    <label className="block sm:col-span-2">
+                      <span className="mb-1 block text-[11px] font-semibold text-ink/60">Variant SKU (optional)</span>
+                      <input
+                        type="text"
+                        placeholder="Auto-uses main SKU if blank"
+                        value={v.sku || ""}
+                        onChange={(e) => updateVariant(i, { sku: e.target.value })}
+                        className="w-full rounded-lg border border-gold/30 px-2 py-1.5 text-sm outline-none focus:border-forest"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-semibold text-ink/60">Compare Price</span>
+                      <input
+                        type="number"
+                        value={v.compareAtPrice || ""}
+                        onChange={(e) => updateVariant(i, { compareAtPrice: e.target.value })}
+                        className="w-full rounded-lg border border-gold/30 px-2 py-1.5 text-sm outline-none focus:border-forest"
+                      />
+                    </label>
+
+                    <div className="col-span-2 flex items-center justify-between sm:col-span-6">
+                      <label className="flex items-center gap-2 text-xs text-ink/70">
+                        <input
+                          type="radio"
+                          name="defaultVariant"
+                          checked={!!v.isDefault}
+                          onChange={() => setDefaultVariant(i)}
+                        />
+                        Default selection on product page
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => removeVariant(i)}
+                        className="text-xs font-semibold text-terracotta hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={addVariant}
+                  className="rounded-full border border-forest px-4 py-1.5 text-xs font-semibold text-forest hover:bg-forest/5"
+                >
+                  + Add Variant
+                </button>
+              </div>
+            )}
           </div>
 
           <label className="block">

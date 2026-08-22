@@ -79,7 +79,8 @@ export default function CheckoutPage() {
     try {
       // Creates the Razorpay order AND a "pending" order in our DB —
       // so it already exists (and is visible to admin) before payment
-      // even starts.
+      // even starts. `items` here already includes each line's `variant`
+      // (or null), which the server re-validates and re-prices.
       const orderRes = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -237,8 +238,11 @@ export default function CheckoutPage() {
               <h2 className="font-body italic text-lg font-bold text-forest">Order Summary</h2>
               <div className="mt-4 space-y-2">
                 {items.map((item) => (
-                  <div key={item.productId} className="flex justify-between text-sm text-ink/80">
-                    <span>{item.name} × {item.quantity}</span>
+                  <div key={item.lineId} className="flex justify-between text-sm text-ink/80">
+                    <span>
+                      {item.name}
+                      {item.variant?.label && ` (${item.variant.label})`} × {item.quantity}
+                    </span>
                     <span>₹{item.price * item.quantity}</span>
                   </div>
                 ))}

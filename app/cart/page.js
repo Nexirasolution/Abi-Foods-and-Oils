@@ -48,7 +48,7 @@ export default function CartPage() {
             <div className="space-y-4 md:col-span-2">
               {items.map((item) => (
                 <div
-                  key={item.productId}
+                  key={item.lineId}
                   className="flex items-center gap-4 rounded-xl2 border border-gold/15 bg-white p-4 shadow-card"
                 >
                   <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-champagne">
@@ -61,18 +61,25 @@ export default function CartPage() {
                     )}
                   </div>
                   <div className="flex-1">
-                    <p className="font-body italic text-sm font-semibold text-ink">{item.name}</p>
+                    <p className="font-body italic text-sm font-semibold text-ink">
+                      {item.name}
+                      {item.variant?.label && (
+                        <span className="ml-2 rounded-full bg-champagne px-2 py-0.5 text-[10px] font-semibold text-gold-dark align-middle">
+                          {item.variant.label}
+                        </span>
+                      )}
+                    </p>
                     <p className="text-xs text-muted">₹{item.price} / {item.unit}</p>
                     <div className="mt-2 flex items-center rounded-full border border-gold/30 w-fit">
                       <button
-                        onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                        onClick={() => updateQuantity(item.lineId, item.quantity - 1)}
                         className="px-3 py-1 text-forest"
                       >
                         −
                       </button>
                       <span className="w-6 text-center text-xs font-semibold">{item.quantity}</span>
                       <button
-                        onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                        onClick={() => updateQuantity(item.lineId, item.quantity + 1)}
                         className="px-3 py-1 text-forest"
                       >
                         +
@@ -82,7 +89,7 @@ export default function CartPage() {
                   <div className="text-right">
                     <p className="font-body italic text-sm font-bold text-forest">₹{item.price * item.quantity}</p>
                     <button
-                      onClick={() => removeItem(item.productId)}
+                      onClick={() => removeItem(item.lineId)}
                       className="mt-2 text-xs text-terracotta hover:underline"
                     >
                       Remove

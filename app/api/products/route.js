@@ -22,6 +22,31 @@ function normalizeMedia(media) {
   }));
 }
 
+// Cleans up incoming variant rows from the admin form: coerces numbers,
+// drops rows without a label, and normalizes the SKU casing.
+function normalizeVariants(variants) {
+  if (!Array.isArray(variants)) return [];
+  const cleaned = variants
+    .filter((v) => v && String(v.label || "").trim())
+    .map((v) => ({
+      label: String(v.label).trim(),
+      value: Number(v.value) || 0,
+      unit: v.unit || "piece",
+      sku: v.sku ? String(v.sku).trim().toUpperCase() : undefined,
+      price: Number(v.price) || 0,
+      compareAtPrice: Number(v.compareAtPrice) || 0,
+      stock: Number(v.stock) || 0,
+      isDefault: !!v.isDefault,
+    }));
+
+  // Guarantee exactly one default so the storefront always has something
+  // pre-selected, even if the admin form didn't set one.
+  if (cleaned.length && !cleaned.some((v) => v.isDefault)) {
+    cleaned[0].isDefault = true;
+  }
+  return cleaned;
+}
+
 // Escape regex special characters so search terms like "gift+set" or "100%" don't break the query
 function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -67,6 +92,8 @@ export async function GET(req) {
         { shortDescription: { $regex: safe, $options: "i" } },
         { sku: { $regex: safe, $options: "i" } },
         { tags: { $regex: safe, $options: "i" } },
+        { "variants.sku": { $regex: safe, $options: "i" } },
+        { "variants.label": { $regex: safe, $options: "i" } },
       ];
     }
 
@@ -133,12 +160,34 @@ export async function POST(req) {
     const existingSlug = await Product.findOne({ slug });
     if (existingSlug) slug = `${slug}-${Date.now().toString().slice(-5)}`;
 
+    const variants = normalizeVariants(body.variants);
+
+    // If any variant SKUs were supplied, make sure they don't collide with
+    // another product's variant SKUs or main SKU.
+    const variantSkus = variants.map((v) => v.sku).filter(Boolean);
+    if (variantSkus.length) {
+      const dupVariantSku = await Product.findOne({
+        $or: [
+          { sku: { $in: variantSkus } },
+          { "variants.sku": { $in: variantSkus } },
+        ],
+      });
+      if (dupVariantSku) {
+        return NextResponse.json(
+          { error: "One or more variant SKUs are already in use." },
+          { status: 400 }
+        );
+      }
+    }
+
     try {
       const product = await Product.create({
         ...body,
         sku,
         slug,
         media: normalizeMedia(body.media),
+        hasVariants: !!body.hasVariants && variants.length > 0,
+        variants,
       });
       return NextResponse.json({ product }, { status: 201 });
     } catch (err) {

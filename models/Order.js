@@ -1,6 +1,21 @@
 // models/Order.js
 import mongoose from "mongoose";
 
+// Snapshot of the variant chosen at checkout (e.g. 500g @ ₹199), kept on the
+// order line so it stays accurate even if the product's variants change or
+// are removed later. `id` matches the Product's variants[]._id at the time
+// of purchase — used by confirmPayment to decrement the right variant's stock.
+const OrderItemVariantSchema = new mongoose.Schema(
+  {
+    id: { type: mongoose.Schema.Types.ObjectId, default: null },
+    label: { type: String, default: "" },
+    value: { type: Number, default: null },
+    unit: { type: String, default: "" },
+    sku: { type: String, default: "" },
+  },
+  { _id: false }
+);
+
 const OrderItemSchema = new mongoose.Schema(
   {
     product: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
@@ -10,6 +25,8 @@ const OrderItemSchema = new mongoose.Schema(
     price: { type: Number, required: true },
     quantity: { type: Number, required: true, min: 1 },
     unit: { type: String, default: "piece" },
+    // Null for simple (non-variant) products.
+    variant: { type: OrderItemVariantSchema, default: null },
   },
   { _id: false }
 );

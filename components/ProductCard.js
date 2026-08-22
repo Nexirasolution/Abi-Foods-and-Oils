@@ -11,12 +11,30 @@ export default function ProductCard({ product }) {
 
   const image = media?.url;
   const mediaType = media?.type || media?.mediaType || "image";
-  const outOfStock = product.stock <= 0;
 
-  const hasDiscount = product.compareAtPrice > product.price;
+  const hasVariants = product.hasVariants && product.variants?.length > 0;
+
+  // With variants, "in stock" means at least one variant has stock.
+  const outOfStock = hasVariants
+    ? product.variants.every((v) => v.stock <= 0)
+    : product.stock <= 0;
+
+  // Price range across variants, or the simple product's own price/discount.
+  const variantPrices = hasVariants ? product.variants.map((v) => v.price) : [];
+  const minVariantPrice = hasVariants ? Math.min(...variantPrices) : null;
+  const maxVariantPrice = hasVariants ? Math.max(...variantPrices) : null;
+
+  const hasDiscount = !hasVariants && product.compareAtPrice > product.price;
   const discountPercent = hasDiscount
     ? Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100)
     : 0;
+
+  function handleQuickAdd() {
+    // Variant products need the customer to pick a size first, so quick-add
+    // just sends them to the product page instead of guessing a default.
+    if (hasVariants) return;
+    addItem(product, 1);
+  }
 
   return (
     <div className="card-hover group relative flex flex-col overflow-hidden rounded-3xl border border-gold/15 bg-white shadow-card">
@@ -71,21 +89,43 @@ export default function ProductCard({ product }) {
         <div className="mt-auto flex items-center justify-between pt-4">
           <div>
             <div className="flex items-baseline gap-2">
-              <span className="font-body italic text-lg font-bold text-forest">₹{product.price}</span>
-              {hasDiscount && (
-                <span className="text-xs text-muted line-through">₹{product.compareAtPrice}</span>
+              {hasVariants ? (
+                <span className="font-body italic text-lg font-bold text-forest">
+                  {minVariantPrice === maxVariantPrice
+                    ? `₹${minVariantPrice}`
+                    : `From ₹${minVariantPrice}`}
+                </span>
+              ) : (
+                <>
+                  <span className="font-body italic text-lg font-bold text-forest">₹{product.price}</span>
+                  {hasDiscount && (
+                    <span className="text-xs text-muted line-through">₹{product.compareAtPrice}</span>
+                  )}
+                </>
               )}
             </div>
-            <p className="text-[11px] text-muted">{product.unit}</p>
+            <p className="text-[11px] text-muted">
+              {hasVariants ? `${product.variants.length} sizes` : product.unit}
+            </p>
           </div>
-          <button
-            onClick={() => addItem(product, 1)}
-            disabled={outOfStock}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-forest text-ivory transition hover:bg-forest-light disabled:cursor-not-allowed disabled:bg-muted/40"
-            aria-label="Add to cart"
-          >
-            <BagIcon className="h-4 w-4" />
-          </button>
+
+          {hasVariants ? (
+            <Link
+              href={`/products/${product.slug}`}
+              className="flex h-9 items-center rounded-full bg-forest px-3 text-xs font-semibold text-ivory transition hover:bg-forest-light"
+            >
+              View Options
+            </Link>
+          ) : (
+            <button
+              onClick={handleQuickAdd}
+              disabled={outOfStock}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-forest text-ivory transition hover:bg-forest-light disabled:cursor-not-allowed disabled:bg-muted/40"
+              aria-label="Add to cart"
+            >
+              <BagIcon className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
     </div>

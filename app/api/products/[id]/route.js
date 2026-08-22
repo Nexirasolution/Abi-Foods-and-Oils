@@ -13,6 +13,32 @@ function normalizeMedia(media) {
   }));
 }
 
+// Cleans up incoming variant rows from the admin form: coerces numbers,
+// drops rows without a label, and normalizes the SKU casing.
+function normalizeVariants(variants) {
+  if (!Array.isArray(variants)) return undefined;
+  const cleaned = variants
+    .filter((v) => v && String(v.label || "").trim())
+    .map((v) => ({
+      // Keep the existing _id when editing so cart references / order
+      // history that point at a specific variant don't get orphaned.
+      _id: v._id || undefined,
+      label: String(v.label).trim(),
+      value: Number(v.value) || 0,
+      unit: v.unit || "piece",
+      sku: v.sku ? String(v.sku).trim().toUpperCase() : undefined,
+      price: Number(v.price) || 0,
+      compareAtPrice: Number(v.compareAtPrice) || 0,
+      stock: Number(v.stock) || 0,
+      isDefault: !!v.isDefault,
+    }));
+
+  if (cleaned.length && !cleaned.some((v) => v.isDefault)) {
+    cleaned[0].isDefault = true;
+  }
+  return cleaned;
+}
+
 export async function GET(req, { params }) {
   try {
     await connectDB();
@@ -36,6 +62,31 @@ export async function PUT(req, { params }) {
 
     if (body.media) {
       body.media = normalizeMedia(body.media);
+    }
+
+    if (body.variants) {
+      body.variants = normalizeVariants(body.variants);
+
+      const variantSkus = body.variants.map((v) => v.sku).filter(Boolean);
+      if (variantSkus.length) {
+        const dupVariantSku = await Product.findOne({
+          _id: { $ne: id },
+          $or: [
+            { sku: { $in: variantSkus } },
+            { "variants.sku": { $in: variantSkus } },
+          ],
+        });
+        if (dupVariantSku) {
+          return NextResponse.json(
+            { error: "One or more variant SKUs are already in use." },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
+    if (body.hasVariants !== undefined) {
+      body.hasVariants = !!body.hasVariants && (body.variants?.length > 0);
     }
 
     if (body.sku !== undefined) {
