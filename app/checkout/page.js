@@ -20,7 +20,6 @@ export default function CheckoutPage() {
     state: "Tamil Nadu",
     pincode: "",
   });
-  const [paymentMethod, setPaymentMethod] = useState("COD");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [placedOrder, setPlacedOrder] = useState(null);
@@ -40,8 +39,6 @@ export default function CheckoutPage() {
       .catch(() => {});
   }, []);
 
-  // Look up the fee for the selected state; fall back to the default fee
-  // when that state has no override configured in Settings.
   const stateFee = useMemo(() => {
     const match = (settings.stateShippingRates || []).find(
       (r) => r.state?.trim().toLowerCase() === form.state?.trim().toLowerCase()
@@ -68,36 +65,7 @@ export default function CheckoutPage() {
     return true;
   }
 
-  async function handleCOD(e) {
-    e.preventDefault();
-    setError("");
-    if (!validate()) return;
-
-    setLoading(true);
-    try {
-      const res = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customer: form,
-          items,
-          paymentMethod: "COD",
-          shippingFee,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to place order.");
-
-      setPlacedOrder(data.order);
-      clearCart();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleRazorpay(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setError("");
     if (!validate()) return;
@@ -109,10 +77,13 @@ export default function CheckoutPage() {
 
     setLoading(true);
     try {
+      // Creates the Razorpay order AND a "pending" order in our DB —
+      // so it already exists (and is visible to admin) before payment
+      // even starts.
       const orderRes = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: total }),
+        body: JSON.stringify({ customer: form, items, shippingFee }),
       });
       const orderData = await orderRes.json();
       if (!orderRes.ok) throw new Error(orderData.error || "Failed to start payment.");
@@ -131,7 +102,7 @@ export default function CheckoutPage() {
           contact: form.phone,
           email: form.email,
         },
-        theme: { color: "#1f3d2b" }, // forest color
+        theme: { color: "#1f3d2b" },
         handler: async function (response) {
           try {
             const verifyRes = await fetch("/api/razorpay/verify", {
@@ -141,9 +112,6 @@ export default function CheckoutPage() {
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
-                customer: form,
-                items,
-                shippingFee,
               }),
             });
             const verifyData = await verifyRes.json();
@@ -152,7 +120,13 @@ export default function CheckoutPage() {
             setPlacedOrder(verifyData.order);
             clearCart();
           } catch (err) {
-            setError(err.message);
+            // Payment likely still succeeded server-side (verify failed for
+            // some other reason, e.g. a dropped network call) — the webhook
+            // will still confirm the order. Don't scare the user off; point
+            // them at order tracking instead of a hard "failed" message.
+            setError(
+              `${err.message} If money was deducted, check "Track Order" with your phone number — it may still confirm shortly.`
+            );
           } finally {
             setLoading(false);
           }
@@ -164,7 +138,7 @@ export default function CheckoutPage() {
         },
       });
 
-      rzp.on("payment.failed", function (response) {
+      rzp.on("payment.failed", function () {
         setError("Payment failed. Please try again.");
         setLoading(false);
       });
@@ -173,14 +147,6 @@ export default function CheckoutPage() {
     } catch (err) {
       setError(err.message);
       setLoading(false);
-    }
-  }
-
-  function handleSubmit(e) {
-    if (paymentMethod === "COD") {
-      handleCOD(e);
-    } else {
-      handleRazorpay(e);
     }
   }
 
@@ -203,14 +169,14 @@ export default function CheckoutPage() {
             Save this number, or use your phone number, to track your order anytime.
           </p>
           <div className="mt-8 flex justify-center gap-4">
-            <a
-              href="/track-order"
+            
+            <a  href="/track-order"
               className="rounded-full border border-forest/30 px-8 py-3 text-sm font-semibold text-forest hover:bg-champagne"
             >
               Track Order
             </a>
-            <a
-              href="/products"
+            
+            <a  href="/products"
               className="rounded-full bg-forest px-8 py-3 text-sm font-semibold text-ivory shadow-soft hover:bg-forest-light"
             >
               Continue Shopping
@@ -260,30 +226,9 @@ export default function CheckoutPage() {
                 <Field label="Pincode" value={form.pincode} onChange={(v) => update("pincode", v)} />
               </div>
 
-              <div>
-                <p className="mb-2 text-sm font-semibold text-ink">Payment Method</p>
-                <div className="flex gap-3">
-                  {["COD", "Online"].map((m) => (
-                    <button
-                      type="button"
-                      key={m}
-                      onClick={() => setPaymentMethod(m)}
-                      className={`rounded-full border px-5 py-2 text-xs font-semibold transition ${
-                        paymentMethod === m
-                          ? "border-forest bg-forest text-ivory"
-                          : "border-gold/30 text-ink/70 hover:bg-champagne"
-                      }`}
-                    >
-                      {m === "COD" ? "Cash on Delivery" : m}
-                    </button>
-                  ))}
-                </div>
-                {paymentMethod !== "COD" && (
-                  <p className="mt-2 text-xs text-muted">
-                    You'll be redirected to Razorpay's secure checkout to complete payment.
-                  </p>
-                )}
-              </div>
+              <p className="text-xs text-muted">
+                You'll be redirected to Razorpay's secure checkout to complete payment.
+              </p>
 
               {error && <p className="text-sm text-terracotta">{error}</p>}
             </div>
@@ -316,7 +261,7 @@ export default function CheckoutPage() {
                 disabled={loading}
                 className="mt-6 w-full rounded-full bg-forest px-8 py-3.5 text-sm font-semibold text-ivory shadow-soft transition hover:bg-forest-light disabled:opacity-60"
               >
-                {loading ? "Processing..." : paymentMethod === "COD" ? "Place Order" : "Pay & Place Order"}
+                {loading ? "Processing..." : "Pay & Place Order"}
               </button>
             </div>
           </form>
