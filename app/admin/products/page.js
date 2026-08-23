@@ -20,6 +20,7 @@ const EMPTY_FORM = {
   lowStockThreshold: 5,
   description: "",
   isFeatured: false,
+  featuredOrder: 0,
   isActive: true,
   media: [],
   hasVariants: false,
@@ -111,6 +112,7 @@ export default function AdminProductsPage() {
       lowStockThreshold: p.lowStockThreshold,
       description: p.description || "",
       isFeatured: p.isFeatured,
+      featuredOrder: p.featuredOrder || 0,
       isActive: p.isActive,
       media: p.media || [],
       hasVariants: !!p.hasVariants,
@@ -188,6 +190,7 @@ export default function AdminProductsPage() {
         compareAtPrice: Number(form.compareAtPrice) || 0,
         stock: Number(form.stock),
         lowStockThreshold: Number(form.lowStockThreshold),
+        featuredOrder: Number(form.featuredOrder) || 0,
         hasVariants: form.hasVariants && form.variants.length > 0,
         variants: form.hasVariants
           ? form.variants.map((v) => ({
@@ -535,11 +538,18 @@ export default function AdminProductsPage() {
                     </div>
                     <div>
                       <span className="font-medium text-ink">{p.name}</span>
-                      {p.hasVariants && p.variants?.length > 0 && (
-                        <span className="ml-2 rounded-full bg-champagne px-2 py-0.5 text-[10px] font-semibold text-gold-dark">
-                          {p.variants.length} variant{p.variants.length > 1 ? "s" : ""}
-                        </span>
-                      )}
+                      <div className="mt-0.5 flex flex-wrap gap-1">
+                        {p.hasVariants && p.variants?.length > 0 && (
+                          <span className="rounded-full bg-champagne px-2 py-0.5 text-[10px] font-semibold text-gold-dark">
+                            {p.variants.length} variant{p.variants.length > 1 ? "s" : ""}
+                          </span>
+                        )}
+                        {p.isFeatured && (
+                          <span className="rounded-full bg-forest/10 px-2 py-0.5 text-[10px] font-semibold text-forest">
+                            ★ Best Seller{p.featuredOrder ? ` #${p.featuredOrder}` : ""}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-ink/70">{p.category?.name}</td>
@@ -609,14 +619,19 @@ export default function AdminProductsPage() {
                     </span>
                   </div>
                   <p className="mt-0.5 font-mono text-[11px] text-ink/50">{p.sku}</p>
-                  <p className="mt-0.5 text-xs text-ink/70">
-                    {p.category?.name}
+                  <p className="mt-0.5 text-xs text-ink/70">{p.category?.name}</p>
+                  <div className="mt-1 flex flex-wrap gap-1">
                     {p.hasVariants && p.variants?.length > 0 && (
-                      <span className="ml-2 rounded-full bg-champagne px-2 py-0.5 text-[10px] font-semibold text-gold-dark">
+                      <span className="rounded-full bg-champagne px-2 py-0.5 text-[10px] font-semibold text-gold-dark">
                         {p.variants.length} variant{p.variants.length > 1 ? "s" : ""}
                       </span>
                     )}
-                  </p>
+                    {p.isFeatured && (
+                      <span className="rounded-full bg-forest/10 px-2 py-0.5 text-[10px] font-semibold text-forest">
+                        ★ Best Seller{p.featuredOrder ? ` #${p.featuredOrder}` : ""}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -920,12 +935,32 @@ export default function AdminProductsPage() {
               />          
               </label>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:gap-6">
+          <div className="rounded-xl2 border border-gold/20 p-4">
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={form.isFeatured} onChange={(e) => setForm({ ...form, isFeatured: e.target.checked })} />
-              Featured on homepage
+              Featured on homepage (shows in "Best Selling Products")
             </label>
-            <label className="flex items-center gap-2 text-sm">
+
+            {form.isFeatured && (
+              <label className="mt-3 block max-w-[200px]">
+                <span className="mb-1 block text-xs font-semibold text-ink/70">
+                  Display order
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  value={form.featuredOrder}
+                  onChange={(e) => setForm({ ...form, featuredOrder: e.target.value })}
+                  className="w-full rounded-xl border border-gold/30 px-4 py-2.5 text-sm outline-none focus:border-forest"
+                />
+                <span className="mt-1 block text-[11px] text-muted">
+                  Lower numbers show first on the homepage. Products with the same
+                  number (or left at 0) show newest first.
+                </span>
+              </label>
+            )}
+
+            <label className="mt-4 flex items-center gap-2 text-sm">
               <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} />
               Active (visible in store)
             </label>

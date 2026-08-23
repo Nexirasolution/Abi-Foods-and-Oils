@@ -19,10 +19,12 @@ export async function GET(req) {
     await connectDB();
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
+    const paymentStatus = searchParams.get("paymentStatus");
     const limit = parseInt(searchParams.get("limit") || "0", 10);
 
     const query = {};
     if (status) query.status = status;
+    if (paymentStatus) query.paymentStatus = paymentStatus;
 
     let cursor = Order.find(query).sort({ createdAt: -1 });
     if (limit) cursor = cursor.limit(limit);
@@ -85,11 +87,13 @@ export async function POST(req) {
       shippingFee,
       total,
       paymentMethod: paymentMethod || "COD",
+      // paymentStatus defaults to "pending" per the schema
       status: "pending",
       statusHistory: [{ status: "pending", note: "Order placed" }],
     });
 
-    // Decrement stock
+    // Decrement stock (COD / immediate orders; online orders should decrement
+    // on payment verification instead if you want to avoid overselling)
     for (const item of validatedItems) {
       await Product.findByIdAndUpdate(item.product, { $inc: { stock: -item.quantity } });
     }

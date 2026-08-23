@@ -86,13 +86,20 @@ export default async function ProductDetailPage({ params }) {
             </p>
             <h1 className="mt-2 font-display text-3xl font-bold text-forest md:text-4xl">{product.name}</h1>
 
-            <div className="mt-4 flex items-baseline gap-3">
-              <span className="font-display text-3xl font-bold text-forest">₹{product.price}</span>
-              {product.compareAtPrice > product.price && (
-                <span className="text-base text-muted line-through">₹{product.compareAtPrice}</span>
-              )}
-              <span className="text-sm text-muted">/ {product.unit}</span>
-            </div>
+            {/* Only show a single base price for simple products. Variant
+                products show their own (size-specific) price inside
+                ProductDetailActions instead — product.price doesn't match
+                any size the customer can actually buy, so showing it here
+                too was misleading. */}
+            {!product.hasVariants && (
+              <div className="mt-4 flex items-baseline gap-3">
+                <span className="font-display text-3xl font-bold text-forest">₹{product.price}</span>
+                {product.compareAtPrice > product.price && (
+                  <span className="text-base text-muted line-through">₹{product.compareAtPrice}</span>
+                )}
+                <span className="text-sm text-muted">/ {product.unit}</span>
+              </div>
+            )}
 
             <ProductDetailActions product={product} />
           </div>

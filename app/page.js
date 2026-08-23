@@ -17,6 +17,9 @@ async function getData() {
   const categories = await Category.find({ isActive: true }).sort({ sortOrder: 1 }).lean();
   const bestSelling = await Product.find({ isActive: true, isFeatured: true })
     .populate("category", "name slug")
+    // Admin-chosen order first (lower featuredOrder = shown first), then
+    // newest-featured as a tiebreaker for anything still at the default 0.
+    .sort({ featuredOrder: 1, createdAt: -1 })
     .limit(8)
     .lean();
   return {

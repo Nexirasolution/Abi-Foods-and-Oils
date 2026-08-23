@@ -5,6 +5,7 @@ import Link from "next/link";
 import Modal from "@/components/Modal";
 
 const STATUSES = ["pending", "confirmed", "packed", "shipped", "delivered", "cancelled"];
+const PAYMENT_STATUSES = ["pending", "paid", "failed"];
 
 const STATUS_COLORS = {
   pending: "bg-gold/20 text-gold-dark",
@@ -13,6 +14,12 @@ const STATUS_COLORS = {
   shipped: "bg-terracotta/10 text-terracotta",
   delivered: "bg-forest text-ivory",
   cancelled: "bg-muted/10 text-muted",
+};
+
+const PAYMENT_STATUS_COLORS = {
+  pending: "bg-gold/20 text-gold-dark",
+  paid: "bg-forest/10 text-forest",
+  failed: "bg-terracotta/10 text-terracotta",
 };
 
 const EMPTY_TRACKING = { courier: "", trackingNumber: "", trackingUrl: "" };
@@ -52,6 +59,7 @@ export default function AdminOrdersPage() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [updating, setUpdating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [zoomImage, setZoomImage] = useState(null); // { src, alt } | null
   const [tracking, setTracking] = useState(EMPTY_TRACKING);
   const [toast, setToast] = useState(null); // { message, type } | null
@@ -105,6 +113,24 @@ export default function AdminOrdersPage() {
     }
   }
 
+  async function updatePaymentStatus(id, paymentStatus) {
+    setUpdating(true);
+    const res = await fetch(`/api/orders/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paymentStatus }),
+    });
+    const data = await res.json();
+    setUpdating(false);
+    if (res.ok) {
+      setSelected(data.order);
+      loadOrders();
+      showToast(`Payment marked as "${paymentStatus}"`);
+    } else {
+      showToast(data.error || "Failed to update payment status", "error");
+    }
+  }
+
   async function saveTracking() {
     if (!selected) return;
     setUpdating(true);
@@ -121,6 +147,21 @@ export default function AdminOrdersPage() {
       showToast("Tracking details updated successfully");
     } else {
       showToast(data.error || "Failed to save tracking details", "error");
+    }
+  }
+
+  async function deleteOrder(id) {
+    if (!window.confirm("Delete this order permanently? This cannot be undone.")) return;
+    setDeleting(true);
+    const res = await fetch(`/api/orders/${id}`, { method: "DELETE" });
+    const data = await res.json();
+    setDeleting(false);
+    if (res.ok) {
+      setSelected(null);
+      loadOrders();
+      showToast("Order deleted");
+    } else {
+      showToast(data.error || "Failed to delete order", "error");
     }
   }
 
@@ -177,15 +218,16 @@ export default function AdminOrdersPage() {
               <th className="px-4 py-3">Phone</th>
               <th className="px-4 py-3">Total</th>
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Payment</th>
               <th className="px-4 py-3">Date</th>
               <th className="px-4 py-3 text-right">Action</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-muted">Loading...</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">Loading...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-muted">No orders found.</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">No orders found.</td></tr>
             ) : (
               filtered.map((o) => (
                 <tr key={o._id} className="border-b border-gold/10 last:border-0">
@@ -196,6 +238,11 @@ export default function AdminOrdersPage() {
                   <td className="px-4 py-3">
                     <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${STATUS_COLORS[o.status]}`}>
                       {o.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${PAYMENT_STATUS_COLORS[o.paymentStatus || "pending"]}`}>
+                      {o.paymentStatus || "pending"}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-ink/70">
@@ -237,11 +284,14 @@ export default function AdminOrdersPage() {
                     <p className="mt-0.5 text-sm text-ink/70 truncate">{o.customer.name}</p>
                     <p className="text-xs text-muted">{o.customer.phone}</p>
                   </div>
-                  <span
-                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium capitalize ${STATUS_COLORS[o.status]}`}
-                  >
-                    {o.status}
-                  </span>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${STATUS_COLORS[o.status]}`}>
+                      {o.status}
+                    </span>
+                    <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${PAYMENT_STATUS_COLORS[o.paymentStatus || "pending"]}`}>
+                      {o.paymentStatus || "pending"}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="mt-3 flex items-center justify-between border-t border-gold/10 pt-3 text-sm">
@@ -311,6 +361,7 @@ export default function AdminOrdersPage() {
                     </p>
                     <p className="mt-0.5 text-xs text-muted">
                       {item.sku ? `SKU: ${item.sku}` : "SKU: —"} · Qty {item.quantity}
+                      {item.variant?.label ? ` · ${item.variant.label}` : ""}
                     </p>
                   </div>
                   <span className="shrink-0 self-start text-ink">₹{item.price * item.quantity}</span>
@@ -347,6 +398,36 @@ export default function AdminOrdersPage() {
                 </button>
               ))}
             </div>
+
+            <div className="leaf-divider my-5" />
+
+            <p className="text-xs font-semibold uppercase text-muted">Payment Status</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {PAYMENT_STATUSES.map((p) => (
+                <button
+                  key={p}
+                  disabled={updating || (selected.paymentStatus || "pending") === p}
+                  onClick={() => updatePaymentStatus(selected._id, p)}
+                  className={`rounded-full border px-4 py-2 text-xs font-semibold capitalize transition disabled:cursor-default sm:py-1.5 ${
+                    (selected.paymentStatus || "pending") === p
+                      ? "border-forest bg-forest text-ivory"
+                      : "border-gold/30 text-ink/70 hover:bg-champagne"
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+            {selected.paymentMethod === "Online" && selected.razorpay?.paymentId && (
+              <p className="mt-2 text-xs text-muted">
+                Razorpay payment ID: <span className="font-mono text-ink/70">{selected.razorpay.paymentId}</span>
+              </p>
+            )}
+            {selected.paymentMethod === "Online" && selected.razorpay?.orderId && (
+              <p className="mt-1 text-xs text-muted">
+                Razorpay order ID: <span className="font-mono text-ink/70">{selected.razorpay.orderId}</span>
+              </p>
+            )}
 
             <div className="leaf-divider my-5" />
 
@@ -395,6 +476,16 @@ export default function AdminOrdersPage() {
                 {updating ? "Saving..." : "Save tracking"}
               </button>
             </div>
+
+            <div className="leaf-divider my-5" />
+
+            <button
+              onClick={() => deleteOrder(selected._id)}
+              disabled={deleting}
+              className="rounded-full border border-terracotta/40 px-5 py-2 text-xs font-semibold text-terracotta disabled:opacity-60"
+            >
+              {deleting ? "Deleting..." : "Delete order"}
+            </button>
           </div>
         )}
       </Modal>

@@ -78,6 +78,12 @@ const ProductSchema = new mongoose.Schema(
     tags: { type: [String], default: [] },
 
     isFeatured: { type: Boolean, default: false },
+    // Controls display order within the homepage "Best Selling" section.
+    // Lower numbers show first. Only meaningful when isFeatured is true;
+    // products with the same value (e.g. the default 0) fall back to
+    // newest-first so newly-featured products still show up somewhere
+    // sensible before an admin assigns them a real position.
+    featuredOrder: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
 
     attributes: {
