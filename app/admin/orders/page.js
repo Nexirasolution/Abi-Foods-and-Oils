@@ -74,7 +74,8 @@ export default function AdminOrdersPage() {
     if (filter) params.set("status", filter);
     const res = await fetch(`/api/orders?${params.toString()}`);
     const data = await res.json();
-    setOrders(data.orders || []);
+    // Only show orders whose payment has been completed
+    setOrders((data.orders || []).filter((o) => o.paymentStatus === "paid"));
     setLoading(false);
   }
 
@@ -179,7 +180,7 @@ export default function AdminOrdersPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl font-bold text-forest">Orders</h1>
-          <p className="mt-1 text-sm text-muted">{orders.length} orders</p>
+          <p className="mt-1 text-sm text-muted">{orders.length} paid orders</p>
         </div>
         <input
           type="text"
@@ -227,7 +228,7 @@ export default function AdminOrdersPage() {
             {loading ? (
               <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">Loading...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">No orders found.</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">No paid orders found.</td></tr>
             ) : (
               filtered.map((o) => (
                 <tr key={o._id} className="border-b border-gold/10 last:border-0">
@@ -273,7 +274,7 @@ export default function AdminOrdersPage() {
         {loading ? (
           <p className="py-8 text-center text-sm text-muted">Loading...</p>
         ) : filtered.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted">No orders found.</p>
+          <p className="py-8 text-center text-sm text-muted">No paid orders found.</p>
         ) : (
           filtered.map((o) => (
             <div key={o._id} className="rounded-2xl border border-gold/15 bg-white p-4 shadow-card">

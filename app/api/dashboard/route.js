@@ -4,6 +4,9 @@ import Order from "@/models/Order";
 import Product from "@/models/Product";
 import Category from "@/models/Category";
 
+// Only paid, non-cancelled orders count toward sales figures
+const PAID_ACTIVE = { paymentStatus: "paid", status: { $ne: "cancelled" } };
+
 function startOfDay(d) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -24,18 +27,17 @@ export async function GET() {
 
     const [todayOrders, weekOrders, monthOrders, pendingOrders, totalProducts, totalCategories, lowStock, last14] =
       await Promise.all([
-        Order.find({ createdAt: { $gte: today }, status: { $ne: "cancelled" } }),
-        Order.find({ createdAt: { $gte: weekAgo }, status: { $ne: "cancelled" } }),
-        Order.find({ createdAt: { $gte: monthAgo }, status: { $ne: "cancelled" } }),
-        Order.countDocuments({ status: { $in: ["pending", "confirmed"] } }),
+        Order.find({ ...PAID_ACTIVE, createdAt: { $gte: today } }),
+        Order.find({ ...PAID_ACTIVE, createdAt: { $gte: weekAgo } }),
+        Order.find({ ...PAID_ACTIVE, createdAt: { $gte: monthAgo } }),
+        // Paid orders still waiting for action
+        Order.countDocuments({ paymentStatus: "paid", status: { $in: ["pending", "confirmed"] } }),
         Product.countDocuments(),
         Category.countDocuments(),
         Product.find({ $expr: { $lte: ["$stock", "$lowStockThreshold"] } })
           .select("name stock lowStockThreshold images")
           .limit(10),
-        Order.find({ createdAt: { $gte: fourteenDaysAgo }, status: { $ne: "cancelled" } }).select(
-          "createdAt total"
-        ),
+        Order.find({ ...PAID_ACTIVE, createdAt: { $gte: fourteenDaysAgo } }).select("createdAt total"),
       ]);
 
     const sum = (arr) => arr.reduce((acc, o) => acc + o.total, 0);
@@ -55,8 +57,8 @@ export async function GET() {
     }
     const salesTrend = Object.entries(trendMap).map(([date, total]) => ({ date, total }));
 
-    // Top selling products (by quantity across all non-cancelled orders)
-    const allOrders = await Order.find({ status: { $ne: "cancelled" } }).select("items");
+    // Top selling products (by quantity across all paid, non-cancelled orders)
+    const allOrders = await Order.find(PAID_ACTIVE).select("items");
     const productTotals = {};
     for (const order of allOrders) {
       for (const item of order.items) {
